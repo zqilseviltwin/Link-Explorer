@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Link Explorer</title>
+    <link rel="icon" href="icon.ico" type="image/x-icon">
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        .item-icon { width: 24px; text-align: center; margin-right: 8px; }
+        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.4); }
+        .modal-content { background-color: #fefefe; margin: 10% auto; padding: 20px; border: 1px solid #888; width: 90%; max-width: 500px; border-radius: 8px; }
+        .close-button { color: #aaa; float: right; font-size: 28px; font-weight: bold; }
+        .close-button:hover, .close-button:focus { color: black; text-decoration: none; cursor: pointer; }
+        .item-actions button { opacity: 0.6; }
+        .item-actions button:hover { opacity: 1; }
+        #pasteBtn:disabled { background-color: #a0aec0; cursor: not-allowed; }
+
+        /* Default hover for non-selected items is handled by Tailwind's hover:bg-gray-100 */
+
+        .selected-item {
+            background-color: #ebf8ff; /* Tailwind: bg-blue-50 */
+            /* Tailwind's hover:bg-gray-100 should be REMOVED from selected items by JS */
+        }
+        .selected-item:hover {
+            /* Keeps the selected background and adds an outline */
+            /* background-color: #ebf8ff; /* Ensure it stays, usually inherited if not overridden */
+            outline: 2px solid #63b3ed; /* Tailwind: ring-2 ring-blue-400 or similar */
+            outline-offset: -1px; /* Optional: pulls outline slightly inside padding */
+        }
+
+        .dragging-item {
+            opacity: 0.5;
+        }
+        .drop-target-folder {
+            background-color: #f0fff4; 
+            outline: 2px dashed #68d391; 
+        }
+        .drop-target-breadcrumbs {
+            background-color: #f0fff4; 
+            text-decoration: underline;
+            outline: 1px dashed #68d391;
+        }
+        .drop-target-list {
+             background-color: #f7fafc; 
+             outline: 2px dashed #a0aec0; 
+        }
+        .item-rename-input { /* Style for inline rename input */
+            border: 1px solid #cbd5e0; /* Tailwind: border-gray-300 */
+            padding: 2px 4px;
+            border-radius: 4px;
+            box-shadow: inset 0 1px 2px rgba(0,0,0,0.075);
+        }
+        .focused-item-outline { /* Style for keyboard focused item (non-selected) */
+            outline: 2px solid #90cdf4; /* Tailwind: ring-2 ring-blue-300 */
+            outline-offset: -1px;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans">
+
+    <div class="container mx-auto p-4">
+        <header class="mb-6">
+            <h1 class="text-3xl font-bold text-blue-600">Link Explorer</h1>
+        </header>
+
+        <nav id="breadcrumbs" class="mb-4 p-2 bg-gray-200 rounded text-gray-700">
+            <span class="cursor-pointer hover:underline">Root</span>
+        </nav>
+
+        <div id="statusMessage" class="mb-2 text-sm text-gray-600 italic h-5"></div>
+
+
+        <div id="controls" class="mb-4 flex space-x-2">
+            <button id="addFolderBtn" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                <i class="fas fa-folder-plus"></i> Add Folder
+            </button>
+            <button id="addLinkBtn" class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">
+                <i class="fas fa-link"></i> Add Link
+            </button>
+            <button id="pasteBtn" class="bg-yellow-500 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded" disabled>
+                <i class="fas fa-paste"></i> Paste
+            </button>
+        </div>
+
+        <div id="itemList" class="bg-white shadow-md rounded p-4 min-h-[200px]" tabindex="-1"> <!-- Added tabindex="-1" to make it focusable -->
+            <p class="text-gray-500">Loading...</p>
+        </div>
+    </div>
+
+    <!-- Add Folder Modal -->
+    <div id="addFolderModal" class="modal">
+        <div class="modal-content">
+            <span class="close-button" data-modal-id="addFolderModal">×</span>
+            <h2 class="text-xl font-semibold mb-4">Add New Folder</h2>
+            <input type="text" id="newFolderName" placeholder="Folder Name" class="border p-2 w-full mb-4 rounded">
+            <button id="submitAddFolder" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                Create Folder
+            </button>
+        </div>
+    </div>
+
+    <!-- Add Link Modal -->
+    <div id="addLinkModal" class="modal">
+        <div class="modal-content">
+            <span class="close-button" data-modal-id="addLinkModal">×</span>
+            <h2 class="text-xl font-semibold mb-4">Add New Link</h2>
+            <input type="text" id="newLinkName" placeholder="Link Name (e.g., Google Docs)" class="border p-2 w-full mb-2 rounded">
+            <input type="url" id="newLinkUrl" placeholder="Link URL (e.g., https://docs.google.com/...)" class="border p-2 w-full mb-4 rounded">
+            <button id="submitAddLink" class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">
+                Add Link
+            </button>
+        </div>
+    </div>
+
+    <!-- Edit Link Modal -->
+    <div id="editLinkModal" class="modal">
+        <div class="modal-content">
+            <span class="close-button" data-modal-id="editLinkModal">×</span>
+            <h2 class="text-xl font-semibold mb-4">Edit Link</h2>
+            <input type="text" id="editLinkName" placeholder="Link Name" class="border p-2 w-full mb-2 rounded">
+            <input type="url" id="editLinkUrl" placeholder="Link URL" class="border p-2 w-full mb-4 rounded">
+            <button id="submitEditLink" class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">
+                Save Changes
+            </button>
+        </div>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>

@@ -559,7 +559,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function deleteFolderRecursive(folderId) {
-        const batch = db.batch();
+        let batch = db.batch();
         let operationsInBatch = 0;
         const MAX_BATCH_OPS = 450; // Firestore limit 500, safety margin
 

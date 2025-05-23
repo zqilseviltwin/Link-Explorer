@@ -700,18 +700,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!itemToProcessDoc.exists && clipboard.action === 'cut') {
                     showStatus(`Item "${clipItem.name}" to be cut no longer exists. Skipped.`, true); errorsEncountered++; continue;
                 }
-                // if !itemToProcessDoc.exists && clipboard.action === 'copy', it means source was deleted.
-                // copyFolderRecursive and link copy will handle data from clipItem.data if needed.
 
                 if (clipboard.action === 'cut') {
                     if (clipItem.id === currentFolderId) { showStatus(`Cannot move folder "${clipItem.name}" into itself. Skipped.`, true); errorsEncountered++; continue; }
                     if (clipItem.type === 'folder' && await isDescendant(currentFolderId, clipItem.id)) { showStatus(`Cannot move folder "${clipItem.name}" into its own subfolder. Skipped.`, true); errorsEncountered++; continue; }
                     
-                    // Name conflict check for cut/move
                     if (clipItem.originalParentId !== currentFolderId) { // Only check if moving to a different folder
                         const existingItemCheck = await itemsCollection.where("parentId", "==", currentFolderId).where("name", "==", clipItem.name).where("type", "==", clipItem.type).limit(1).get();
                         if (!existingItemCheck.empty) { showStatus(`Item named "${clipItem.name}" already exists in the target location. Move skipped.`, true, 4000); errorsEncountered++; continue; }
-                    } else { // Moving within the same folder (no actual move, just clearing clipboard)
+                    } else {
                          showStatus(`"${clipItem.name}" is already in this folder. Cut operation cleared from clipboard.`, false, 3000); itemsToClearFromCutClipboard.push(clipItem.id); itemsProcessed++; continue;
                     }
                     
@@ -732,10 +729,22 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
 
                     if (clipItem.type === 'link') {
-                        const newLinkRef = itemsCollection.doc();
-                        batch.set(newLinkRef, { ...clipItem.data, name: newName, parentId: currentFolderId, createdAt: firebase.firestore.FieldValue.serverTimestamp(), id: undefined }); // remove old id
+                        const newLinkRef = itemsCollection.doc(); // Firestore generates a new ID for the document
+                        
+                        const dataToSet = { ...clipItem.data };
+                        // Ensure that if clipItem.data somehow contained an 'id' field, it's not copied to the new document's data.
+                        // Standard doc.data() doesn't include 'id', but this is a defensive measure.
+                        delete dataToSet.id; 
+
+                        batch.set(newLinkRef, { 
+                            ...dataToSet, // Spread the original link's data (without 'id')
+                            name: newName, // Set/override with the new name (handles conflicts)
+                            parentId: currentFolderId, // Set the new parent ID
+                            createdAt: firebase.firestore.FieldValue.serverTimestamp() // Set a new creation timestamp
+                            // The problematic 'id: undefined' is removed.
+                        });
                         batchHasOperations = true;
-                    } else if (clipItem.type === 'folder') {
+                    }  else if (clipItem.type === 'folder') {
                         // Original folder for copy might have been deleted.
                         // copyFolderRecursive needs originalFolderId. If clipItem.id (original) is gone, this will fail inside.
                         // For simplicity, assume clipItem.id is the source. If it was deleted, copyFolderRecursive won't find children.
